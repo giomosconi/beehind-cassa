@@ -333,7 +333,7 @@
   }
   function applyData(d){if(d){if(d.entities&&d.entities.length)state.entities=d.entities;if(d.invoices)state.invoices=d.invoices;}}
   function showLogin(err){document.getElementById('login').classList.add('show');document.getElementById('app').style.display='none';document.getElementById('loginErr').textContent=err||'';}
-  function hideLogin(){document.getElementById('login').classList.remove('show');document.getElementById('app').style.display='';}
+  function hideLogin(){document.getElementById('login').classList.remove('show');document.getElementById('app').style.display='block';}
   function doLogin(){
     var v=document.getElementById('loginInput').value.trim();if(!v)return;
     pass=v;document.getElementById('loginErr').textContent='Verifico…';document.getElementById('loginBtn').disabled=true;
