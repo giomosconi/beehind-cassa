@@ -49,6 +49,17 @@
   .kpi.primary .dot{background:var(--honey);}
   .kpi.danger .dot{background:var(--red);} .kpi.danger .val{color:var(--red);}
   .kpi.good .dot{background:var(--green);} .kpi.good .val{color:var(--green);}
+  .kpi.neutral .dot{background:var(--slate);} .kpi.neutral .val{color:var(--ink);}
+  .period{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:2px 0 14px;padding:11px 14px;background:var(--card);border:1px solid var(--line);border-radius:12px;}
+  .period-lbl{font-size:11.5px;font-weight:600;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.02em;}
+  .period .sp{flex:1;}
+  .period-presets{display:flex;gap:6px;}
+  .pchip{height:30px;padding:0 11px;border-radius:999px;border:1px solid var(--line);background:var(--bg);font-size:12.5px;font-weight:500;color:var(--ink-soft);cursor:pointer;}
+  .pchip.on{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .period-dates{display:flex;align-items:center;gap:7px;}
+  .period-dates input{height:34px;border:1px solid var(--line);border-radius:9px;padding:0 9px;font-family:var(--body);font-size:13.5px;color:var(--ink);background:var(--bg);}
+  .period-dates input:focus{outline:none;border-color:var(--honey);}
+  .period-dates .dash{color:var(--ink-faint);}
 
   /* ---- toolbar ---- */
   .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:20px 0 12px;}
@@ -221,14 +232,23 @@
     </div>
     <select class="statussel" id="statusSel">
       <option value="aperte">Da incassare</option>
-      <option value="scadute">Solo scadute</option>
-      <option value="incassate">Incassate</option>
+      <option value="incassate">Incassate nel periodo</option>
       <option value="tutte">Tutte</option>
     </select>
     <button class="add-cta" id="addBtn">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
       Nuova fattura
     </button>
+  </div>
+
+  <div class="period" id="period">
+    <span class="period-lbl">Incassi nel periodo</span>
+    <div class="period-presets">
+      <button class="pchip on" data-preset="this">Questo mese</button>
+      <button class="pchip" data-preset="last">Mese scorso</button>
+    </div>
+    <div class="sp"></div>
+    <div class="period-dates"><input type="date" id="dal"><span class="dash">–</span><input type="date" id="al"></div>
   </div>
 
   <div class="list" id="list"></div>
@@ -257,17 +277,16 @@
         <input id="f_num" type="text" placeholder="es. 12/2026" autocomplete="off">
       </div>
     </div>
-    <div class="two">
-      <div class="field">
-        <label>Data emissione</label>
-        <input id="f_dem" type="date">
-      </div>
-      <div class="field">
-        <label>Scadenza</label>
-        <input id="f_sca" type="date">
-      </div>
+    <div class="field">
+      <label>Data emissione</label>
+      <input id="f_dem" type="date">
     </div>
     <div class="hint" id="bolloHint">Importo sopra 77,47 € → ricordati la marca da bollo da 2 €.</div>
+    <label class="switch"><input type="checkbox" id="f_paid"><span>Già incassata</span></label>
+    <div class="field" id="incassoWrap" style="display:none">
+      <label>Data incasso</label>
+      <input id="f_inc" type="date">
+    </div>
     <div class="field">
       <label>Note (facoltative)</label>
       <textarea id="f_note" placeholder="Es. pagamento a 30 gg, acconto, ecc."></textarea>
@@ -311,7 +330,7 @@
   var DFMT=new Intl.DateTimeFormat('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'});
   var DEFAULT_ENTS=['Giorgia','Edo M','Edo B'];
 
-  var state={entities:DEFAULT_ENTS.slice(),invoices:[],filterEntity:'Tutte',filterStatus:'aperte',q:''};
+  var state={entities:DEFAULT_ENTS.slice(),invoices:[],filterEntity:'Tutte',filterStatus:'aperte',q:'',period:monthRange(0)};
   var editingId=null;
 
   // ---------- backend (Supabase) ----------
@@ -347,6 +366,10 @@
   function isOverdue(inv){return inv.stato!=='incassata' && inv.scadenza && inv.scadenza < todayISO();}
   function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
   function fmtDate(iso){if(!iso)return '—';var p=iso.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
+  function fmtShort(iso){if(!iso)return '—';var p=iso.split('-');return p[2]+'/'+p[1];}
+  function isoD(d){return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);}
+  function monthRange(off){var n=new Date();var d1=new Date(n.getFullYear(),n.getMonth()+(off||0),1);var d2=new Date(n.getFullYear(),n.getMonth()+(off||0)+1,0);return {dal:isoD(d1),al:isoD(d2)};}
+  function inRange(d,a,b){return !!d && d>=a && d<=b;}
   function esc(s){return (s||'').replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 
   function scopeInvoices(){
@@ -356,20 +379,16 @@
   // ---------- KPI ----------
   function renderKpis(){
     var inv=scopeInvoices();
-    var open=0,over=0,paidYear=0,openCount=0;
-    var yr=new Date().getFullYear();
+    var dal=state.period.dal, al=state.period.al;
+    var incassato=0,nInc=0,daIncassare=0;
     inv.forEach(function(i){
-      if(i.stato==='incassata'){
-        if(i.dataIncasso && new Date(i.dataIncasso).getFullYear()===yr) paidYear+=i.importo;
-      }else{
-        open+=i.importo; openCount++;
-        if(isOverdue(i)) over+=i.importo;
-      }
+      if(i.stato==='incassata'){ if(inRange(i.dataIncasso,dal,al)){incassato+=i.importo;nInc++;} }
+      else { daIncassare+=i.importo; }
     });
     document.getElementById('kpis').innerHTML=
-      kpiCard('primary','Da incassare',EUR.format(open),openCount+(openCount===1?' fattura aperta':' fatture aperte'))+
-      kpiCard('danger','Scaduto',EUR.format(over),over>0?'da sollecitare':'tutto in regola')+
-      kpiCard('good','Incassato '+yr,EUR.format(paidYear),'da inizio anno');
+      kpiCard('primary','Incassato nel periodo',EUR.format(incassato),fmtShort(dal)+' – '+fmtShort(al))+
+      kpiCard('good','N° incassi',String(nInc),'nel periodo')+
+      kpiCard('neutral','Da incassare',EUR.format(daIncassare),'totale aperto');
   }
   function kpiCard(cls,lbl,val,sub){
     return '<div class="kpi '+cls+'">'+
@@ -400,26 +419,24 @@
     var inv=scopeInvoices().slice();
     var q=state.q.toLowerCase().trim();
     if(q) inv=inv.filter(function(i){return (i.cliente||'').toLowerCase().indexOf(q)>=0 || (i.numero||'').toLowerCase().indexOf(q)>=0;});
-    var fs=state.filterStatus;
+    var fs=state.filterStatus, dal=state.period.dal, al=state.period.al;
     inv=inv.filter(function(i){
       if(fs==='aperte') return i.stato!=='incassata';
-      if(fs==='scadute') return isOverdue(i);
-      if(fs==='incassate') return i.stato==='incassata';
+      if(fs==='incassate') return i.stato==='incassata' && inRange(i.dataIncasso,dal,al);
       return true;
     });
-    // sort: open by soonest due (overdue first), paid by most recent
     inv.sort(function(a,b){
       var ap=a.stato==='incassata',bp=b.stato==='incassata';
       if(ap!==bp) return ap?1:-1;
-      if(!ap) return (a.scadenza||'9999')<(b.scadenza||'9999')?-1:1;
-      return (b.dataIncasso||'')<(a.dataIncasso||'')?-1:1;
+      if(ap) return (b.dataIncasso||'')<(a.dataIncasso||'')?-1:1;
+      return (b.dataEmissione||'')<(a.dataEmissione||'')?-1:1;
     });
 
     var el=document.getElementById('list');
     if(inv.length===0){
       el.innerHTML='<div class="empty">'+
         '<svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18 2 31.86 10v16L18 34 4.14 26V10L18 2Z" fill="currentColor" opacity=".5"/></svg>'+
-        '<h3>Niente da mostrare qui</h3><p>'+(state.invoices.length===0?'Aggiungi la prima fattura con il pulsante “Nuova fattura”.':'Cambia filtro o posizione per vedere altre fatture.')+'</p></div>';
+        '<h3>Niente da mostrare qui</h3><p>'+(state.invoices.length===0?'Aggiungi la prima fattura con il pulsante “Nuova fattura”.':'Cambia filtro, periodo o posizione per vedere altre fatture.')+'</p></div>';
       return;
     }
     el.innerHTML=inv.map(rowHTML).join('');
@@ -433,16 +450,15 @@
     });
   }
   function rowHTML(i){
-    var paid=i.stato==='incassata', over=isOverdue(i);
+    var paid=i.stato==='incassata';
     var badge=paid?'<span class="badge paid">Incassata '+fmtDate(i.dataIncasso)+'</span>'
-              :over?'<span class="badge over">Scaduta</span>'
               :'<span class="badge open">Da incassare</span>';
     var bollo=(!paid && i.importo>77.47)?'<span class="bollo">bollo 2&euro;</span>':'';
-    return '<div class="row'+(over?' overdue':'')+'">'+
+    return '<div class="row">'+
       '<span class="ent">'+esc(i.entity)+'</span>'+
       '<div class="who"><b>'+esc(i.cliente||'—')+'</b>'+(i.numero?'<small>n° '+esc(i.numero)+'</small>':'')+bollo+'</div>'+
       '<div class="amt tnum">'+EUR.format(i.importo)+'</div>'+
-      '<div class="due"><span class="d">'+(paid?'':'scad. '+fmtDate(i.scadenza))+'</span>'+badge+'</div>'+
+      '<div class="due">'+badge+'</div>'+
       '<div class="acts">'+
         (paid
           ? '<button class="act" data-act="pay" data-id="'+i.id+'" title="Segna come da incassare"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.4 2.6L3 8"/><path d="M3 3v5h5"/></svg></button>'
@@ -484,8 +500,9 @@
       document.getElementById('f_imp').value=i.importo;
       document.getElementById('f_num').value=i.numero||'';
       document.getElementById('f_dem').value=i.dataEmissione||'';
-      document.getElementById('f_sca').value=i.scadenza||'';
       document.getElementById('f_note').value=i.note||'';
+      document.getElementById('f_paid').checked=(i.stato==='incassata');
+      document.getElementById('f_inc').value=i.dataIncasso||todayISO();
     }else{
       t.textContent='Nuova fattura';
       document.getElementById('f_ent').value=(state.filterEntity!=='Tutte'?state.filterEntity:state.entities[0]);
@@ -493,9 +510,11 @@
       document.getElementById('f_imp').value='';
       document.getElementById('f_num').value='';
       document.getElementById('f_dem').value=todayISO();
-      document.getElementById('f_sca').value=addDays(todayISO(),30);
       document.getElementById('f_note').value='';
+      document.getElementById('f_paid').checked=false;
+      document.getElementById('f_inc').value=todayISO();
     }
+    document.getElementById('incassoWrap').style.display=document.getElementById('f_paid').checked?'':'none';
     checkBollo();
     document.getElementById('ov').classList.add('show');
     setTimeout(function(){document.getElementById('f_cli').focus();},120);
@@ -511,15 +530,17 @@
     var imp=parseFloat(document.getElementById('f_imp').value.replace(',','.'));
     if(!cli){toast('Aggiungi il nome del cliente');document.getElementById('f_cli').focus();return;}
     if(isNaN(imp)||imp<=0){toast('Inserisci un importo valido');document.getElementById('f_imp').focus();return;}
+    var paid=document.getElementById('f_paid').checked;
     var payload={
       entity:ent,cliente:cli,importo:Math.round(imp*100)/100,
       numero:document.getElementById('f_num').value.trim(),
       dataEmissione:document.getElementById('f_dem').value,
-      scadenza:document.getElementById('f_sca').value,
-      note:document.getElementById('f_note').value.trim()
+      note:document.getElementById('f_note').value.trim(),
+      stato:paid?'incassata':'aperta',
+      dataIncasso:paid?(document.getElementById('f_inc').value||todayISO()):null
     };
     if(editingId){var i=find(editingId);for(var k in payload)i[k]=payload[k];toast('Modifiche salvate');}
-    else{payload.id=uid();payload.stato='aperta';payload.dataIncasso=null;state.invoices.push(payload);toast('Fattura aggiunta');}
+    else{payload.id=uid();state.invoices.push(payload);toast('Fattura aggiunta');}
     persist();closeForm();renderAll();
   }
 
@@ -544,7 +565,9 @@
   function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(function(){t.classList.remove('show');},2200);}
 
   // ---------- render ----------
-  function renderAll(){renderKpis();renderChips();renderList();document.getElementById('statusSel').value=state.filterStatus;}
+  function renderAll(){renderKpis();renderChips();renderList();document.getElementById('statusSel').value=state.filterStatus;setPeriodInputs();}
+  function setPeriodInputs(){document.getElementById('dal').value=state.period.dal;document.getElementById('al').value=state.period.al;}
+  function clearPreset(){Array.prototype.forEach.call(document.querySelectorAll('.pchip'),function(x){x.classList.remove('on');});}
 
   // ---------- events ----------
   document.getElementById('addBtn').onclick=function(){openForm(null);};
@@ -552,6 +575,10 @@
   document.getElementById('saveBtn').onclick=save;
   document.getElementById('ov').onclick=function(e){if(e.target===this)closeForm();};
   document.getElementById('f_imp').addEventListener('input',checkBollo);
+  document.getElementById('f_paid').addEventListener('change',function(e){document.getElementById('incassoWrap').style.display=e.target.checked?'':'none';});
+  document.getElementById('dal').addEventListener('change',function(e){state.period.dal=e.target.value;clearPreset();renderAll();});
+  document.getElementById('al').addEventListener('change',function(e){state.period.al=e.target.value;clearPreset();renderAll();});
+  Array.prototype.forEach.call(document.querySelectorAll('.pchip'),function(b){b.onclick=function(){var off=b.getAttribute('data-preset')==='last'?-1:0;state.period=monthRange(off);clearPreset();b.classList.add('on');renderAll();};});
   document.getElementById('q').addEventListener('input',function(e){state.q=e.target.value;renderList();});
   document.getElementById('statusSel').addEventListener('change',function(e){state.filterStatus=e.target.value;renderList();});
   document.getElementById('exportBtn').onclick=exportCSV;
