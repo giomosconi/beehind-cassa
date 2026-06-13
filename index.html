@@ -168,6 +168,14 @@
   @media(min-width:681px){
     .due{display:flex;flex-direction:column;align-items:flex-end;}
   }
+  /* ---- per-entity incassi ---- */
+  .perent{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:0 0 16px;}
+  .pe{display:flex;flex-direction:column;gap:2px;align-items:flex-start;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;transition:.15s;font-family:var(--body);}
+  .pe:hover{border-color:#dcd8cf;}
+  .pe.on{border-color:var(--honey);background:var(--honey-bg);}
+  .pe-n{font-size:12px;font-weight:600;color:var(--ink-soft);}
+  .pe-v{font-family:var(--display);font-weight:700;font-size:19px;color:var(--green);letter-spacing:-.01em;}
+  .pe-c{font-size:11px;color:var(--ink-faint);}
   /* ---- login ---- */
   #app{display:none;}
   .login{position:fixed;inset:0;z-index:100;background:var(--bg);display:none;align-items:center;justify-content:center;padding:24px;}
@@ -250,6 +258,8 @@
     <div class="sp"></div>
     <div class="period-dates"><input type="date" id="dal"><span class="dash">–</span><input type="date" id="al"></div>
   </div>
+
+  <div class="perent" id="perEnt"></div>
 
   <div class="list" id="list"></div>
 </div>
@@ -394,6 +404,23 @@
     return '<div class="kpi '+cls+'">'+
       '<div class="meta"><div class="lbl"><span class="dot"></span>'+lbl+'</div>'+
       '<div class="val tnum">'+val+'</div><div class="sub">'+sub+'</div></div></div>';
+  }
+
+  // ---------- per-entity incassi ----------
+  function renderPerEnt(){
+    var el=document.getElementById('perEnt');
+    var dal=state.period.dal, al=state.period.al;
+    var by={}; state.entities.forEach(function(e){by[e]={tot:0,n:0};});
+    state.invoices.forEach(function(i){
+      if(i.stato==='incassata' && inRange(i.dataIncasso,dal,al)){ if(!by[i.entity])by[i.entity]={tot:0,n:0}; by[i.entity].tot+=i.importo; by[i.entity].n++; }
+    });
+    el.innerHTML=state.entities.map(function(e){
+      var on=state.filterEntity===e?' on':'';
+      return '<button class="pe'+on+'" data-pe="'+esc(e)+'"><span class="pe-n">'+esc(e)+'</span><span class="pe-v tnum">'+EUR.format(by[e].tot)+'</span><span class="pe-c">'+by[e].n+(by[e].n===1?' incasso':' incassi')+'</span></button>';
+    }).join('');
+    Array.prototype.forEach.call(el.querySelectorAll('[data-pe]'),function(b){
+      b.onclick=function(){var e=b.getAttribute('data-pe');state.filterEntity=(state.filterEntity===e?'Tutte':e);renderAll();};
+    });
   }
 
   // ---------- chips ----------
@@ -547,10 +574,10 @@
   // ---------- export ----------
   function exportCSV(){
     if(state.invoices.length===0){toast('Non ci sono fatture da esportare');return;}
-    var head=['Posizione','Cliente','N fattura','Importo','Data emissione','Scadenza','Stato','Data incasso','Note'];
+    var head=['Posizione','Cliente','N fattura','Importo','Data emissione','Stato','Data incasso','Note'];
     var rows=state.invoices.map(function(i){
-      var stato=i.stato==='incassata'?'Incassata':(isOverdue(i)?'Scaduta':'Da incassare');
-      return [i.entity,i.cliente,i.numero,String(i.importo).replace('.',','),fmtDate(i.dataEmissione),fmtDate(i.scadenza),stato,fmtDate(i.dataIncasso),i.note]
+      var stato=i.stato==='incassata'?'Incassata':'Da incassare';
+      return [i.entity,i.cliente,i.numero,String(i.importo).replace('.',','),fmtDate(i.dataEmissione),stato,fmtDate(i.dataIncasso),i.note]
         .map(function(c){c=(c==null?'':String(c));return '"'+c.replace(/"/g,'""')+'"';}).join(';');
     });
     var csv='\ufeff'+head.join(';')+'\n'+rows.join('\n');
@@ -565,7 +592,7 @@
   function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(function(){t.classList.remove('show');},2200);}
 
   // ---------- render ----------
-  function renderAll(){renderKpis();renderChips();renderList();document.getElementById('statusSel').value=state.filterStatus;setPeriodInputs();}
+  function renderAll(){renderKpis();renderPerEnt();renderChips();renderList();document.getElementById('statusSel').value=state.filterStatus;setPeriodInputs();}
   function setPeriodInputs(){document.getElementById('dal').value=state.period.dal;document.getElementById('al').value=state.period.al;}
   function clearPreset(){Array.prototype.forEach.call(document.querySelectorAll('.pchip'),function(x){x.classList.remove('on');});}
 
