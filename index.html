@@ -168,6 +168,19 @@
   @media(min-width:681px){
     .due{display:flex;flex-direction:column;align-items:flex-end;}
   }
+  /* ---- payments ---- */
+  .pay-section{margin:2px 0 4px;}
+  .pay-head{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-bottom:8px;}
+  .pay-residuo{font-weight:600;color:var(--ink-faint);font-variant-numeric:tabular-nums;}
+  .pay-residuo.done{color:var(--green);}
+  .pay-row{display:flex;gap:8px;margin-bottom:8px;align-items:center;}
+  .pay-row .pay-imp{flex:1;height:40px;border:1px solid var(--line);border-radius:9px;padding:0 11px;font-family:var(--body);font-size:15px;color:var(--ink);background:var(--bg);}
+  .pay-row .pay-date{height:40px;border:1px solid var(--line);border-radius:9px;padding:0 9px;font-family:var(--body);font-size:14px;color:var(--ink);background:var(--bg);}
+  .pay-row input:focus{outline:none;border-color:var(--honey);}
+  .pay-del{width:34px;height:34px;flex:0 0 auto;border:none;background:var(--red-bg);color:var(--red);border-radius:8px;font-size:18px;line-height:1;cursor:pointer;}
+  .pay-add{width:100%;height:40px;border:1px dashed #ddd7c8;background:var(--bg);color:var(--ink-soft);border-radius:10px;font-family:var(--body);font-size:13.5px;font-weight:600;cursor:pointer;}
+  .pay-add:hover{border-color:var(--honey);color:var(--honey-dk);}
+  .badge.part{background:#fff2d9;color:#b5790a;}
   /* ---- per-entity incassi ---- */
   .perent{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:0 0 16px;}
   .pe{display:flex;flex-direction:column;gap:2px;align-items:flex-start;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;transition:.15s;font-family:var(--body);}
@@ -240,7 +253,7 @@
     </div>
     <select class="statussel" id="statusSel">
       <option value="aperte">Da incassare</option>
-      <option value="incassate">Incassate nel periodo</option>
+      <option value="incassate">Con incassi nel periodo</option>
       <option value="tutte">Tutte</option>
     </select>
     <button class="add-cta" id="addBtn">
@@ -277,25 +290,19 @@
       <label>Cliente</label>
       <input id="f_cli" type="text" placeholder="Nome del cliente" autocomplete="off">
     </div>
-    <div class="two">
-      <div class="field">
-        <label>Importo €</label>
-        <input id="f_imp" type="number" inputmode="decimal" step="0.01" placeholder="0,00">
-      </div>
-      <div class="field">
-        <label>N° fattura</label>
-        <input id="f_num" type="text" placeholder="es. 12/2026" autocomplete="off">
-      </div>
+    <div class="field">
+      <label>Importo totale €</label>
+      <input id="f_imp" type="number" inputmode="decimal" step="0.01" placeholder="0,00">
     </div>
     <div class="field">
       <label>Data emissione</label>
       <input id="f_dem" type="date">
     </div>
     <div class="hint" id="bolloHint">Importo sopra 77,47 € → ricordati la marca da bollo da 2 €.</div>
-    <label class="switch"><input type="checkbox" id="f_paid"><span>Già incassata</span></label>
-    <div class="field" id="incassoWrap" style="display:none">
-      <label>Data incasso</label>
-      <input id="f_inc" type="date">
+    <div class="pay-section">
+      <div class="pay-head"><span>Pagamenti ricevuti</span><span id="payResiduo" class="pay-residuo"></span></div>
+      <div id="payList"></div>
+      <button type="button" class="pay-add" id="payAdd">+ Aggiungi pagamento</button>
     </div>
     <div class="field">
       <label>Note (facoltative)</label>
@@ -360,7 +367,7 @@
       api('save',{entities:state.entities,invoices:state.invoices}).then(function(){setSync('saved');}).catch(function(){setSync('error');toast('Salvataggio non riuscito');});
     },450);
   }
-  function applyData(d){if(d){if(d.entities&&d.entities.length)state.entities=d.entities;if(d.invoices)state.invoices=d.invoices;}}
+  function applyData(d){if(d){if(d.entities&&d.entities.length)state.entities=d.entities;if(d.invoices)state.invoices=d.invoices;}state.invoices.forEach(normalize);}
   function showLogin(err){document.getElementById('login').classList.add('show');document.getElementById('app').style.display='none';document.getElementById('loginErr').textContent=err||'';}
   function hideLogin(){document.getElementById('login').classList.remove('show');document.getElementById('app').style.display='block';}
   function doLogin(){
@@ -382,6 +389,12 @@
   function inRange(d,a,b){return !!d && d>=a && d<=b;}
   function esc(s){return (s||'').replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 
+  function payTot(i){var p=i.pagamenti||[],x=0;for(var k=0;k<p.length;k++)x+=(+p[k].importo||0);return Math.round(x*100)/100;}
+  function residuoOf(i){return Math.round(((i.importo||0)-payTot(i))*100)/100;}
+  function statoOf(i){var t=payTot(i);if(t<=0)return 'aperta';if(t>=(i.importo||0)-0.009)return 'incassata';return 'parziale';}
+  function paysInRange(i,a,b){var out=[];(i.pagamenti||[]).forEach(function(p){if(inRange(p.data,a,b))out.push(p);});return out;}
+  function normalize(i){if(!i.pagamenti){if(i.stato==='incassata'&&i.importo>0)i.pagamenti=[{id:uid(),importo:i.importo,data:i.dataIncasso||i.dataEmissione||todayISO()}];else i.pagamenti=[];}return i;}
+
   function scopeInvoices(){
     return state.invoices.filter(function(i){return state.filterEntity==='Tutte'||i.entity===state.filterEntity;});
   }
@@ -392,13 +405,13 @@
     var dal=state.period.dal, al=state.period.al;
     var incassato=0,nInc=0,daIncassare=0;
     inv.forEach(function(i){
-      if(i.stato==='incassata'){ if(inRange(i.dataIncasso,dal,al)){incassato+=i.importo;nInc++;} }
-      else { daIncassare+=i.importo; }
+      paysInRange(i,dal,al).forEach(function(p){incassato+=(+p.importo||0);nInc++;});
+      var r=residuoOf(i); if(r>0.009) daIncassare+=r;
     });
     document.getElementById('kpis').innerHTML=
       kpiCard('primary','Incassato nel periodo',EUR.format(incassato),fmtShort(dal)+' – '+fmtShort(al))+
       kpiCard('good','N° incassi',String(nInc),'nel periodo')+
-      kpiCard('neutral','Da incassare',EUR.format(daIncassare),'totale aperto');
+      kpiCard('neutral','Da incassare',EUR.format(daIncassare),'totale residuo');
   }
   function kpiCard(cls,lbl,val,sub){
     return '<div class="kpi '+cls+'">'+
@@ -412,7 +425,8 @@
     var dal=state.period.dal, al=state.period.al;
     var by={}; state.entities.forEach(function(e){by[e]={tot:0,n:0};});
     state.invoices.forEach(function(i){
-      if(i.stato==='incassata' && inRange(i.dataIncasso,dal,al)){ if(!by[i.entity])by[i.entity]={tot:0,n:0}; by[i.entity].tot+=i.importo; by[i.entity].n++; }
+      if(!by[i.entity])by[i.entity]={tot:0,n:0};
+      paysInRange(i,dal,al).forEach(function(p){by[i.entity].tot+=(+p.importo||0);by[i.entity].n++;});
     });
     el.innerHTML=state.entities.map(function(e){
       var on=state.filterEntity===e?' on':'';
@@ -448,14 +462,13 @@
     if(q) inv=inv.filter(function(i){return (i.cliente||'').toLowerCase().indexOf(q)>=0 || (i.numero||'').toLowerCase().indexOf(q)>=0;});
     var fs=state.filterStatus, dal=state.period.dal, al=state.period.al;
     inv=inv.filter(function(i){
-      if(fs==='aperte') return i.stato!=='incassata';
-      if(fs==='incassate') return i.stato==='incassata' && inRange(i.dataIncasso,dal,al);
+      if(fs==='aperte') return residuoOf(i)>0.009;
+      if(fs==='incassate') return paysInRange(i,dal,al).length>0;
       return true;
     });
     inv.sort(function(a,b){
-      var ap=a.stato==='incassata',bp=b.stato==='incassata';
-      if(ap!==bp) return ap?1:-1;
-      if(ap) return (b.dataIncasso||'')<(a.dataIncasso||'')?-1:1;
+      var ao=residuoOf(a)>0.009,bo=residuoOf(b)>0.009;
+      if(ao!==bo) return ao?-1:1;
       return (b.dataEmissione||'')<(a.dataEmissione||'')?-1:1;
     });
 
@@ -470,26 +483,26 @@
     Array.prototype.forEach.call(el.querySelectorAll('[data-act]'),function(b){
       b.onclick=function(){
         var id=b.getAttribute('data-id'),act=b.getAttribute('data-act');
-        if(act==='pay') togglePaid(id);
+        if(act==='pay') openForm(id,true);
         else if(act==='edit') openForm(id);
         else if(act==='del') del(id);
       };
     });
   }
   function rowHTML(i){
-    var paid=i.stato==='incassata';
-    var badge=paid?'<span class="badge paid">Incassata '+fmtDate(i.dataIncasso)+'</span>'
+    var st=statoOf(i),paidv=payTot(i),res=residuoOf(i);
+    var badge=st==='incassata'?'<span class="badge paid">Saldata</span>'
+              :st==='parziale'?'<span class="badge part">Parziale</span>'
               :'<span class="badge open">Da incassare</span>';
-    var bollo=(!paid && i.importo>77.47)?'<span class="bollo">bollo 2&euro;</span>':'';
+    var bollo=(st!=='incassata' && i.importo>77.47)?'<span class="bollo">bollo 2&euro;</span>':'';
+    var sub=st==='parziale'?'<small>incassato '+EUR.format(paidv)+' · residuo '+EUR.format(res)+'</small>':'';
     return '<div class="row">'+
       '<span class="ent">'+esc(i.entity)+'</span>'+
-      '<div class="who"><b>'+esc(i.cliente||'—')+'</b>'+(i.numero?'<small>n° '+esc(i.numero)+'</small>':'')+bollo+'</div>'+
+      '<div class="who"><b>'+esc(i.cliente||'—')+'</b>'+sub+bollo+'</div>'+
       '<div class="amt tnum">'+EUR.format(i.importo)+'</div>'+
       '<div class="due">'+badge+'</div>'+
       '<div class="acts">'+
-        (paid
-          ? '<button class="act" data-act="pay" data-id="'+i.id+'" title="Segna come da incassare"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.4 2.6L3 8"/><path d="M3 3v5h5"/></svg></button>'
-          : '<button class="act pay" data-act="pay" data-id="'+i.id+'" title="Segna come incassata"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></button>')+
+        (res>0.009?'<button class="act pay" data-act="pay" data-id="'+i.id+'" title="Registra incasso"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>':'')+
         '<button class="act" data-act="edit" data-id="'+i.id+'" title="Modifica"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>'+
         '<button class="act del" data-act="del" data-id="'+i.id+'" title="Elimina"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>'+
       '</div></div>';
@@ -516,7 +529,33 @@
     var s=document.getElementById('f_ent');
     s.innerHTML=state.entities.map(function(e){return '<option value="'+esc(e)+'">'+esc(e)+'</option>';}).join('');
   }
-  function openForm(id){
+  var formPays=[];
+  function payRowsHTML(){
+    return formPays.map(function(p,idx){
+      return '<div class="pay-row"><input class="pay-imp" type="number" inputmode="decimal" step="0.01" placeholder="0,00" value="'+(p.importo!==''&&p.importo!=null?p.importo:'')+'"><input class="pay-date" type="date" value="'+(p.data||todayISO())+'"><button type="button" class="pay-del" data-pi="'+idx+'">×</button></div>';
+    }).join('');
+  }
+  function renderPays(){
+    var el=document.getElementById('payList');
+    el.innerHTML=payRowsHTML();
+    Array.prototype.forEach.call(el.querySelectorAll('.pay-del'),function(b){b.onclick=function(){syncPaysFromDom();formPays.splice(+b.getAttribute('data-pi'),1);renderPays();};});
+    Array.prototype.forEach.call(el.querySelectorAll('.pay-imp, .pay-date'),function(inp){inp.addEventListener('input',function(){syncPaysFromDom();});});
+    updateResiduo();
+  }
+  function syncPaysFromDom(){
+    var rows=document.querySelectorAll('#payList .pay-row');
+    formPays=Array.prototype.map.call(rows,function(r){return {importo:r.querySelector('.pay-imp').value,data:r.querySelector('.pay-date').value};});
+    updateResiduo();
+  }
+  function updateResiduo(){
+    var tot=num(document.getElementById('f_imp').value),paid=0;
+    formPays.forEach(function(p){paid+=(num(''+p.importo)||0);});
+    var r=Math.round((tot-paid)*100)/100;
+    var el=document.getElementById('payResiduo');
+    el.textContent=(paid>0?'Incassato '+EUR.format(paid)+' · ':'')+'Residuo '+EUR.format(isNaN(r)?tot:r);
+    el.className='pay-residuo'+(paid>0&&r<=0.009?' done':'');
+  }
+  function openForm(id,quickPay){
     editingId=id||null;
     fillEntSelect();
     var t=document.getElementById('sheetTitle');
@@ -525,23 +564,20 @@
       document.getElementById('f_ent').value=i.entity;
       document.getElementById('f_cli').value=i.cliente||'';
       document.getElementById('f_imp').value=i.importo;
-      document.getElementById('f_num').value=i.numero||'';
       document.getElementById('f_dem').value=i.dataEmissione||'';
       document.getElementById('f_note').value=i.note||'';
-      document.getElementById('f_paid').checked=(i.stato==='incassata');
-      document.getElementById('f_inc').value=i.dataIncasso||todayISO();
+      formPays=(i.pagamenti||[]).map(function(p){return {importo:p.importo,data:p.data};});
+      if(quickPay){var rr=residuoOf(i);if(rr>0.009)formPays.push({importo:rr,data:todayISO()});}
     }else{
       t.textContent='Nuova fattura';
       document.getElementById('f_ent').value=(state.filterEntity!=='Tutte'?state.filterEntity:state.entities[0]);
       document.getElementById('f_cli').value='';
       document.getElementById('f_imp').value='';
-      document.getElementById('f_num').value='';
       document.getElementById('f_dem').value=todayISO();
       document.getElementById('f_note').value='';
-      document.getElementById('f_paid').checked=false;
-      document.getElementById('f_inc').value=todayISO();
+      formPays=[];
     }
-    document.getElementById('incassoWrap').style.display=document.getElementById('f_paid').checked?'':'none';
+    renderPays();
     checkBollo();
     document.getElementById('ov').classList.add('show');
     setTimeout(function(){document.getElementById('f_cli').focus();},120);
@@ -552,19 +588,18 @@
     document.getElementById('bolloHint').classList.toggle('show',!isNaN(v)&&v>77.47);
   }
   function save(){
+    syncPaysFromDom();
     var ent=document.getElementById('f_ent').value;
     var cli=document.getElementById('f_cli').value.trim();
-    var imp=parseFloat(document.getElementById('f_imp').value.replace(',','.'));
+    var imp=num(document.getElementById('f_imp').value);
     if(!cli){toast('Aggiungi il nome del cliente');document.getElementById('f_cli').focus();return;}
     if(isNaN(imp)||imp<=0){toast('Inserisci un importo valido');document.getElementById('f_imp').focus();return;}
-    var paid=document.getElementById('f_paid').checked;
+    var pags=[];formPays.forEach(function(p){var a=num(''+p.importo);if(a>0)pags.push({id:uid(),importo:Math.round(a*100)/100,data:p.data||todayISO()});});
     var payload={
       entity:ent,cliente:cli,importo:Math.round(imp*100)/100,
-      numero:document.getElementById('f_num').value.trim(),
       dataEmissione:document.getElementById('f_dem').value,
       note:document.getElementById('f_note').value.trim(),
-      stato:paid?'incassata':'aperta',
-      dataIncasso:paid?(document.getElementById('f_inc').value||todayISO()):null
+      pagamenti:pags
     };
     if(editingId){var i=find(editingId);for(var k in payload)i[k]=payload[k];toast('Modifiche salvate');}
     else{payload.id=uid();state.invoices.push(payload);toast('Fattura aggiunta');}
@@ -574,10 +609,11 @@
   // ---------- export ----------
   function exportCSV(){
     if(state.invoices.length===0){toast('Non ci sono fatture da esportare');return;}
-    var head=['Posizione','Cliente','N fattura','Importo','Data emissione','Stato','Data incasso','Note'];
+    var head=['Posizione','Cliente','Importo totale','Incassato','Residuo','Stato','Data emissione','Pagamenti','Note'];
+    var labels={aperta:'Da incassare',parziale:'Parziale',incassata:'Saldata'};
     var rows=state.invoices.map(function(i){
-      var stato=i.stato==='incassata'?'Incassata':'Da incassare';
-      return [i.entity,i.cliente,i.numero,String(i.importo).replace('.',','),fmtDate(i.dataEmissione),stato,fmtDate(i.dataIncasso),i.note]
+      var det=(i.pagamenti||[]).map(function(p){return fmtDate(p.data)+': '+String(p.importo).replace('.',',');}).join(' | ');
+      return [i.entity,i.cliente,String(i.importo).replace('.',','),String(payTot(i)).replace('.',','),String(residuoOf(i)).replace('.',','),labels[statoOf(i)],fmtDate(i.dataEmissione),det,i.note]
         .map(function(c){c=(c==null?'':String(c));return '"'+c.replace(/"/g,'""')+'"';}).join(';');
     });
     var csv='\ufeff'+head.join(';')+'\n'+rows.join('\n');
@@ -601,8 +637,8 @@
   document.getElementById('cancelBtn').onclick=closeForm;
   document.getElementById('saveBtn').onclick=save;
   document.getElementById('ov').onclick=function(e){if(e.target===this)closeForm();};
-  document.getElementById('f_imp').addEventListener('input',checkBollo);
-  document.getElementById('f_paid').addEventListener('change',function(e){document.getElementById('incassoWrap').style.display=e.target.checked?'':'none';});
+  document.getElementById('f_imp').addEventListener('input',function(){checkBollo();updateResiduo();});
+  document.getElementById('payAdd').onclick=function(){syncPaysFromDom();var tot=num(document.getElementById('f_imp').value),paid=0;formPays.forEach(function(p){paid+=(num(''+p.importo)||0);});var r=Math.round((tot-paid)*100)/100;formPays.push({importo:(r>0.009?r:''),data:todayISO()});renderPays();};
   document.getElementById('dal').addEventListener('change',function(e){state.period.dal=e.target.value;clearPreset();renderAll();});
   document.getElementById('al').addEventListener('change',function(e){state.period.al=e.target.value;clearPreset();renderAll();});
   Array.prototype.forEach.call(document.querySelectorAll('.pchip'),function(b){b.onclick=function(){var off=b.getAttribute('data-preset')==='last'?-1:0;state.period=monthRange(off);clearPreset();b.classList.add('on');renderAll();};});
@@ -721,7 +757,8 @@
         if(existing[key]){dup++;return;}
         existing[key]=1;
         var paid=allPaid||(p.stato&&p.stato.indexOf('incass')>=0);
-        state.invoices.push({id:uid(),entity:ent,cliente:p.cliente||'—',importo:p.importo||0,numero:p.numero||'',dataEmissione:p.dataEmissione||'',scadenza:p.scadenza||'',note:p.note||'',stato:paid?'incassata':'aperta',dataIncasso:paid?(p.dataEmissione||todayISO()):null});
+        var pg=(paid&&(p.importo||0)>0)?[{id:uid(),importo:p.importo,data:p.dataEmissione||todayISO()}]:[];
+        state.invoices.push({id:uid(),entity:ent,cliente:p.cliente||'—',importo:p.importo||0,numero:p.numero||'',dataEmissione:p.dataEmissione||'',note:p.note||'',pagamenti:pg});
         added++;
       });
       document.getElementById('impDo').textContent='Importa';
